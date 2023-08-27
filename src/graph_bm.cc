@@ -12,7 +12,9 @@
 #define ENABLE_LOCK 1
 #define WEIGHTED 0
 #define VERIFY 0
+#define DEL 0
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
 
@@ -47,6 +49,8 @@
 #include "TC.h"
 #include "BellmanFordUnweighted.h"
 #include "io_util.h"
+
+//#include "sim_api.h"
 
 using namespace graphstore;
 
@@ -230,7 +234,7 @@ double test_sssp_bf(G& GA, commandLine& P) {
 
 void run_algorithm(commandLine& P) {
   auto test_id = P.getOptionValue("-t", "BFS");
-  size_t rounds = P.getOptionLongValue("-rounds", 4);
+  size_t rounds = P.getOptionLongValue("-r", 1000000);
   
 	std::string src, dest;
 	// read edges as source and destination
@@ -242,8 +246,8 @@ void run_algorithm(commandLine& P) {
 	uint32_t num_nodes;
   uint64_t num_edges;
   auto filename = P.getOptionValue("-f", "none");
-	//pair_uint *edges = get_edges_from_file(filename.c_str(), 1,true, &num_edges, &num_nodes);
-	pair_uint *edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
+	pair_uint *edges = get_edges_from_file(filename.c_str(), 1,true, &num_edges, &num_nodes);
+	//pair_uint *edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
 
 	Graph graph(num_nodes);
 	//std::random_shuffle(edgelist.begin(), edgelist.end());
@@ -262,11 +266,11 @@ void run_algorithm(commandLine& P) {
 
 	PRINT("Inserting edges");	
 	gettimeofday(&start, &tzp);
-	graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
-	//parallel_for (uint64_t i = 0; i < num_edges; i++) {
+	// graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
+	parallel_for (uint64_t i = 0; i < num_edges; i++) {
 	//for (uint64_t i = 0; i < num_edges; i++) {
-		//graph.add_edge(edges[i].x, edges[i].y);
-	//}
+		graph.add_edge(edges[i].x, edges[i].y);
+	}
 
 	gettimeofday(&end, &tzp);
   for(uint32_t i = 0; i < num_edges; i++) {
@@ -286,7 +290,7 @@ void run_algorithm(commandLine& P) {
 	print_time_elapsed("Inserting edges: ", &start, &end);
 	PRINT("Throughput: " <<
 				graph.get_num_edges()/(float)cal_time_elapsed(&start, &end));
-//#if 0
+#if 0
   std::vector<std::string> test_ids;
   // if testname is TC, include it, otherwise exclude it
   if (P.getOptionLongValue("-TC",0) != 0) {
@@ -311,9 +315,11 @@ void run_algorithm(commandLine& P) {
       << "\ttime=" << (total_time / rounds)
       << "\tgraph=" << filename << std::endl;
   }
-//#endif
+#endif
   /** insert bm below here **/
-	std::vector<uint32_t> update_sizes = {10, 100, 1000 ,10000,100000,1000000,10000000};
+  // std::vector<uint32_t> update_sizes = {10, 100, 1000 ,10000,100000,1000000,10000000};
+  uint32_t batch_size = static_cast<uint32_t>(rounds);
+  std::vector<uint32_t> update_sizes = {batch_size};
   auto r = random_aspen();
   auto update_times = std::vector<double>();
   size_t n_trials = 1;
@@ -322,12 +328,13 @@ void run_algorithm(commandLine& P) {
     double avg_delete = 0;
     std::cout << "Running bs: " << update_sizes[us] << std::endl;
 
-    if (update_sizes[us] <= 10000000) {
-      n_trials = 20;
-    }
-    else {
-      n_trials = 5;
-    }
+    // if (update_sizes[us] <= 10000000) {
+    //   n_trials = 20;
+    // }
+    // else {
+    //   n_trials = 5;
+    // }
+    n_trials =20;
     size_t updates_to_run = update_sizes[us];
 		auto perm = get_random_permutation(updates_to_run);
     for (size_t ts=0; ts<n_trials; ts++) {
@@ -359,11 +366,14 @@ void run_algorithm(commandLine& P) {
 				new_srcs[i] = edges[i].x;
 				new_dests[i] = edges[i].y;
 			}
+
+
       gettimeofday(&start, &tzp);
       graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
       gettimeofday(&end, &tzp);
       avg_insert += cal_time_elapsed(&start, &end);
       
+#if DEL
       for(uint32_t i = 0; i < updates_to_run; i++) {
         if (!graph.is_edge(new_srcs[i], new_dests[i])) {
           printf("edge (%u, %u) not found, should be\n", new_srcs[i], new_dests[i]);
@@ -378,15 +388,18 @@ void run_algorithm(commandLine& P) {
       }
       gettimeofday(&end, &tzp);
       avg_delete +=  cal_time_elapsed(&start, &end);
+#endif
     }
     double time_i = (double) avg_insert / n_trials;
     double insert_throughput = updates_to_run / time_i;
     printf("batch_size = %zu, average insert: %f, throughput %e\n", updates_to_run, time_i, insert_throughput);
     
+#if DEL
     double time_d = (double) avg_delete / n_trials;
     double delete_throughput = updates_to_run / time_d;
     printf("batch_size = %zu, average delete: %f, throughput %e\n", updates_to_run, time_d, delete_throughput);
-    
+
+#endif    
   }
 }
  
@@ -398,6 +411,7 @@ void run_algorithm(commandLine& P) {
  * ============================================================================
  */
 int main(int argc, char** argv) {
+  cout<< "this is graph_bm "<<endl;
   srand(time(NULL));
   printf("Num workers: %ld\n", getWorkers());
   commandLine P(argc, argv, "./graph_bm [-t testname -r rounds -f file");
