@@ -86,3 +86,5 @@ edgenum of Graph: 296681728
 batch_size = 10000000, average insert: 3.445384, throughput 2.902434e+06
 
 this is graph_bm 
+Num workers: 28
+Inserting edges
