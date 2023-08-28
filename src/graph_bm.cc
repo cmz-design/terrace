@@ -350,7 +350,6 @@ void run_algorithm(commandLine& P) {
 		auto perm = get_random_permutation(updates_to_run);
     for (size_t ts=0; ts<n_trials; ts++) {
       uint32_t num_nodes = graph.get_num_vertices();
-
       std::vector<uint32_t> new_srcs(updates_to_run);
       std::vector<uint32_t> new_dests(updates_to_run);
       double a = 0.5;

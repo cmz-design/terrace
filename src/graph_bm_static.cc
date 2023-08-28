@@ -411,6 +411,7 @@ void run_algorithm(commandLine &P)
         new_srcs[i] = edge.first;
         new_dests[i] = edge.second;
       }
+      
       pair_uint *edges = (pair_uint *)calloc(updates_to_run, sizeof(pair_uint));
       for (uint32_t i = 0; i < updates_to_run; i++)
       {

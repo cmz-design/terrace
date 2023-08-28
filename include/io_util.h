@@ -114,6 +114,7 @@ pair_uint *get_edges_from_file_adj_sym(std::string filename,
   long length;
   char *S = readStringFromFile(filename.c_str(), &length);
   words W = stringToWords(S, length);
+  printf("getting edges from file %s\n", filename.c_str());
   if (strcmp(W.Strings[0], "AdjacencyGraph") != 0) {
     std::cout << "Bad input file: missing header: AdjacencyGraph" << std::endl;
     exit(-1);
