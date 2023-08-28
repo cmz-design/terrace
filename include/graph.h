@@ -464,7 +464,7 @@ static inline void unlock(uint32_t *data)
 									array_btree_node);
 #endif
 		}
-    printf("starting to insert items to pma\n");
+    // printf("starting to insert items to pma\n");
 		// insert edges from the sec list to PMA
 		parallel_for (uint32_t i = 0; i < edge_count; i++) {
 			//auto idx = i;
@@ -487,7 +487,7 @@ static inline void unlock(uint32_t *data)
 #endif
 			}
 		}
-    printf("done with pma\n");
+    // printf("done with pma\n");
 		
 		// insert edges from sec list to b-tree 
 		parallel_for (uint32_t i = 0; i < parts.size()-1; i++) {

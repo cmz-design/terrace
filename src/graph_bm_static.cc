@@ -52,8 +52,6 @@
 #include "BellmanFordUnweighted.h"
 #include "io_util.h"
 
-#include "BlockQueue.h"
-
 // #include <mutex>
 
 // #include "sim_api.h"
@@ -272,66 +270,79 @@ void consumer(Graph &G, std::vector<uint32_t> src, std::vector<uint32_t> dest)
     G.add_edge(src[i], dest[i]);
   }
 }
-  void run_algorithm(commandLine & P)
+void consumer_batch(Graph &G, std::vector<uint32_t> src, std::vector<uint32_t> dest, uint32_t num_edge, std::vector<uint32_t> perm)
+{
+  G.add_edge_batch(src.data(), dest.data(), num_edge, perm);
+}
+void run_algorithm(commandLine &P)
+{
+  auto test_id = P.getOptionValue("-t", "BFS");
+  size_t rounds = P.getOptionLongValue("-r", 1000000);
+  int txt_or_adj = P.getOptionLongValue("-a", 1);
+  std::string src, dest;
+  // read edges as source and destination
+  // int cnt = 0;
+  struct timeval start, end;
+  struct timezone tzp;
+
+  // initialize graph
+  uint32_t num_nodes;
+  uint64_t num_edges;
+  auto filename = P.getOptionValue("-f", "none");
+  pair_uint *edges;
+  switch (txt_or_adj)
   {
-    auto test_id = P.getOptionValue("-t", "BFS");
-    size_t rounds = P.getOptionLongValue("-r", 1000000);
+  case 1:
+      edges = get_edges_from_file(filename.c_str(), 1, false, &num_edges, &num_nodes);
+    break;
+  case 2:
+      edges = get_edges_from_file(filename.c_str(), 1, true, &num_edges, &num_nodes);
+    break;
+  default:
+      edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
+    break;
+  }
+  Graph graph(num_nodes);
+  // std::random_shuffle(edgelist.begin(), edgelist.end());
 
-    std::string src, dest;
-    // read edges as source and destination
-    // int cnt = 0;
-    struct timeval start, end;
-    struct timezone tzp;
+  // std::random_device rd;
+  // std::mt19937 g(rd());
+  // std::shuffle(edges, edges+num_edges, g);
 
-    // initialize graph
-    uint32_t num_nodes;
-    uint64_t num_edges;
-    auto filename = P.getOptionValue("-f", "none");
-    pair_uint *edges = get_edges_from_file(filename.c_str(), 1, true, &num_edges, &num_nodes);
-    // pair_uint *edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
+  std::vector<uint32_t> new_srcs(num_edges);
+  std::vector<uint32_t> new_dests(num_edges);
+  for (uint32_t i = 0; i < num_edges; i++)
+  {
+    new_srcs[i] = edges[i].x;
+    new_dests[i] = edges[i].y;
+  }
+  auto perm = get_random_permutation(num_edges);
 
-    Graph graph(num_nodes);
-    // std::random_shuffle(edgelist.begin(), edgelist.end());
+  PRINT("Inserting edges");
+  gettimeofday(&start, &tzp);
+  graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
+  // parallel_for (uint64_t i = 0; i < num_edges; i++) {
+  //   graph.add_edge(edges[i].x, edges[i].y);
+  // }
 
-    // std::random_device rd;
-    // std::mt19937 g(rd());
-    // std::shuffle(edges, edges+num_edges, g);
-
-    std::vector<uint32_t> new_srcs(num_edges);
-    std::vector<uint32_t> new_dests(num_edges);
-    for (uint32_t i = 0; i < num_edges; i++)
+  gettimeofday(&end, &tzp);
+  for (uint32_t i = 0; i < num_edges; i++)
+  {
+    if (!graph.is_edge(edges[i].x, edges[i].y))
     {
-      new_srcs[i] = edges[i].x;
-      new_dests[i] = edges[i].y;
+      printf("edge (%u, %u) not found, should be\n", edges[i].x, edges[i].y);
+      printf("\tdegree %u = %u\n", edges[i].x, graph.degree(edges[i].x));
     }
-    auto perm = get_random_permutation(num_edges);
+  }
 
-    PRINT("Inserting edges");
-    gettimeofday(&start, &tzp);
-    graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
-    // parallel_for (uint64_t i = 0; i < num_edges; i++) {
-    // for (uint64_t i = 0; i < num_edges; i++) {
-    // graph.add_edge(edges[i].x, edges[i].y);
-    //}
+  free(edges);
+  new_srcs.clear();
+  new_dests.clear();
 
-    gettimeofday(&end, &tzp);
-    for (uint32_t i = 0; i < num_edges; i++)
-    {
-      if (!graph.is_edge(edges[i].x, edges[i].y))
-      {
-        printf("edge (%u, %u) not found, should be\n", edges[i].x, edges[i].y);
-        printf("\tdegree %u = %u\n", edges[i].x, graph.degree(edges[i].x));
-      }
-    }
-
-    free(edges);
-    new_srcs.clear();
-    new_dests.clear();
-
-    float size_gb = graph.get_size() / (float)1073741824;
-    PRINT("Construction finished. Nodes: " << graph.get_num_vertices() << " Edges: " << graph.get_num_edges() << " Size: " << size_gb << " GB");
-    print_time_elapsed("Inserting edges: ", &start, &end);
-    PRINT("Throughput: " << graph.get_num_edges() / (float)cal_time_elapsed(&start, &end));
+  float size_gb = graph.get_size() / (float)1073741824;
+  PRINT("Construction finished. Nodes: " << graph.get_num_vertices() << " Edges: " << graph.get_num_edges() << " Size: " << size_gb << " GB");
+  print_time_elapsed("Inserting edges: ", &start, &end);
+  PRINT("Throughput: " << graph.get_num_edges() / (float)cal_time_elapsed(&start, &end));
 #if 0
   std::vector<std::string> test_ids;
   // if testname is TC, include it, otherwise exclude it
@@ -358,238 +369,257 @@ void consumer(Graph &G, std::vector<uint32_t> src, std::vector<uint32_t> dest)
       << "\tgraph=" << filename << std::endl;
   }
 #endif
-    /** insert bm below here **/
-    // std::vector<uint32_t> update_sizes = {10, 100, 1000 ,10000,100000,1000000,10000000};
-    uint32_t batch_size = static_cast<uint32_t>(rounds);
-    std::vector<uint32_t> update_sizes = {batch_size};
-    auto r = random_aspen();
-    auto update_times = std::vector<double>();
-    size_t n_trials = 1;
-    for (size_t us = 0; us < update_sizes.size(); us++)
+  /** insert bm below here **/
+  // std::vector<uint32_t> update_sizes = {10, 100, 1000 ,10000,100000,1000000,10000000};
+  uint32_t batch_size = static_cast<uint32_t>(rounds);
+  std::vector<uint32_t> update_sizes = {batch_size};
+  auto r = random_aspen();
+  auto update_times = std::vector<double>();
+  size_t n_trials = 1;
+  for (size_t us = 0; us < update_sizes.size(); us++)
+  {
+    double avg_insert = 0;
+    double avg_delete = 0;
+    std::cout << "Running bs: " << update_sizes[us] << std::endl;
+
+    // if (update_sizes[us] <= 10000000)
+    // {
+    //   n_trials = 20;
+    // }
+    // else
+    // {
+    //   n_trials = 5;
+    // }
+    n_trials = 10;
+    size_t updates_to_run = update_sizes[us];
+    auto perm = get_random_permutation(updates_to_run);
+    for (size_t ts = 0; ts < n_trials; ts++)
     {
-      double avg_insert = 0;
-      double avg_delete = 0;
-      std::cout << "Running bs: " << update_sizes[us] << std::endl;
+      uint32_t num_nodes = graph.get_num_vertices();
 
-      // if (update_sizes[us] <= 10000000)
-      // {
-      //   n_trials = 20;
-      // }
-      // else
-      // {
-      //   n_trials = 5;
-      // }
-      n_trials = 20;
-      size_t updates_to_run = update_sizes[us];
-      auto perm = get_random_permutation(updates_to_run);
-      for (size_t ts = 0; ts < n_trials; ts++)
+      std::vector<uint32_t> new_srcs(updates_to_run);
+      std::vector<uint32_t> new_dests(updates_to_run);
+      double a = 0.5;
+      double b = 0.1;
+      double c = 0.1;
+      size_t nn = 1 << (log2_up(num_nodes) - 1);
+      auto rmat = rMat<uint32_t>(nn, r.ith_rand(100 + ts), a, b, c);
+      parallel_for(uint32_t i = 0; i < updates_to_run; i++)
       {
-        uint32_t num_nodes = graph.get_num_vertices();
-
-        std::vector<uint32_t> new_srcs(updates_to_run);
-        std::vector<uint32_t> new_dests(updates_to_run);
-        double a = 0.5;
-        double b = 0.1;
-        double c = 0.1;
-        size_t nn = 1 << (log2_up(num_nodes) - 1);
-        auto rmat = rMat<uint32_t>(nn, r.ith_rand(100 + ts), a, b, c);
-        parallel_for(uint32_t i = 0; i < updates_to_run; i++)
-        {
-          std::pair<uint32_t, uint32_t> edge = rmat(i);
-          // edges[i] = edge;
-          new_srcs[i] = edge.first;
-          new_dests[i] = edge.second;
-        }
-        pair_uint *edges = (pair_uint *)calloc(updates_to_run, sizeof(pair_uint));
-        for (uint32_t i = 0; i < updates_to_run; i++)
-        {
-          edges[i].x = new_srcs[i];
-          edges[i].y = new_dests[i];
-        }
-        integerSort_y((pair_els *)edges, updates_to_run, num_nodes);
-        integerSort_x((pair_els *)edges, updates_to_run, num_nodes);
-        new_srcs.clear();
-        new_srcs.clear();
-        for (uint32_t i = 0; i < updates_to_run; i++)
-        {
-          new_srcs[i] = edges[i].x;
-          new_dests[i] = edges[i].y;
-        }
-        /*
-              gettimeofday(&start, &tzp);
-              SimRoiStart();
-              SimNamedMarker(4, "begin");
-              graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
-              SimNamedMarker(5, "end");
-              SimRoiEnd();
-              gettimeofday(&end, &tzp);
-              avg_insert += cal_time_elapsed(&start, &end); */
-
-        int worknum = getWorkers(); // 线程数
-        vector<vector<uint32_t>> srcs_vector;
-        vector<vector<uint32_t>> dests_vector;
-        srcs_vector.resize(worknum, vector<uint32_t>(0)); // 初始化vector
-        dests_vector.resize(worknum, vector<uint32_t>(0));
-        for (uint64_t i = 0; i < updates_to_run; i++)
-        {
-          srcs_vector[new_srcs[i] % worknum].emplace_back(new_srcs[i]);
-          dests_vector[new_srcs[i] % worknum].emplace_back(new_dests[i]);
-        }
-        vector<thread> th_cons;
-        for (int i = 0; i < worknum; ++i)
-        {
-          cout<<"num of each threads"<<srcs_vector[i].size()<<" ";
-          th_cons.emplace_back(consumer, std::ref(graph), srcs_vector[i], dests_vector[i]);
-        }
-        cout<<endl;
-        gettimeofday(&start, &tzp);
-        for (auto &t : th_cons)
-        {
-          t.join();
-        }
-        // graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
-        gettimeofday(&end, &tzp);
-        avg_insert += cal_time_elapsed(&start, &end);
-        free(edges);
-#if DEL
-        for (uint32_t i = 0; i < updates_to_run; i++)
-        {
-          if (!graph.is_edge(new_srcs[i], new_dests[i]))
-          {
-            printf("edge (%u, %u) not found, should be\n", new_srcs[i], new_dests[i]);
-            printf("\tdegree %u = %u\n", new_srcs[i], graph.degree(new_srcs[i]));
-            return;
-          }
-        }
-
-        gettimeofday(&start, &tzp);
-        parallel_for(uint32_t i = 0; i < updates_to_run; i++)
-        {
-          graph.remove_edge(new_srcs[i], new_dests[i]);
-        }
-        gettimeofday(&end, &tzp);
-        avg_delete += cal_time_elapsed(&start, &end);
-#endif
+        std::pair<uint32_t, uint32_t> edge = rmat(i);
+        // edges[i] = edge;
+        new_srcs[i] = edge.first;
+        new_dests[i] = edge.second;
       }
-      double time_i = (double)avg_insert / n_trials;
-      double insert_throughput = updates_to_run / time_i;
-      printf("batch_size = %zu, average insert: %f, throughput %e\n", updates_to_run, time_i, insert_throughput);
+      pair_uint *edges = (pair_uint *)calloc(updates_to_run, sizeof(pair_uint));
+      for (uint32_t i = 0; i < updates_to_run; i++)
+      {
+        edges[i].x = new_srcs[i];
+        edges[i].y = new_dests[i];
+      }
+      integerSort_y((pair_els *)edges, updates_to_run, num_nodes);
+      integerSort_x((pair_els *)edges, updates_to_run, num_nodes);
+      new_srcs.clear();
+      new_srcs.clear();
+      for (uint32_t i = 0; i < updates_to_run; i++)
+      {
+        new_srcs[i] = edges[i].x;
+        new_dests[i] = edges[i].y;
+      }
+      /*
+            gettimeofday(&start, &tzp);
+            SimRoiStart();
+            SimNamedMarker(4, "begin");
+            graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
+            SimNamedMarker(5, "end");
+            SimRoiEnd();
+            gettimeofday(&end, &tzp);
+            avg_insert += cal_time_elapsed(&start, &end); */
 
+      int worknum = getWorkers(); // 线程数
+      vector<vector<uint32_t>> srcs_vector;
+      vector<vector<uint32_t>> dests_vector;
+      srcs_vector.resize(worknum, vector<uint32_t>(0)); // 初始化vector
+      dests_vector.resize(worknum, vector<uint32_t>(0));
+      for (uint64_t i = 0; i < updates_to_run; i++)
+      {
+        srcs_vector[new_srcs[i] % worknum].emplace_back(new_srcs[i]);
+        dests_vector[new_srcs[i] % worknum].emplace_back(new_dests[i]);
+      }
+
+      cout << "num of each threads: ";
+      for (int i = 0; i < worknum; ++i)
+      {
+        cout << srcs_vector[i].size() << " ";
+      }
+      cout << endl;
+
+      vector<thread> th_cons;
+      for (int i = 0; i < worknum; ++i)
+      {
+        th_cons.emplace_back(consumer, std::ref(graph), srcs_vector[i], dests_vector[i]);
+      }
+      // for (int i = 0; i < worknum; ++i)
+      // {
+      //   uint32_t num_edge = srcs_vector[i].size();
+      //   auto _perm = get_random_permutation(num_edge);
+      //   th_cons.emplace_back(consumer_batch, std::ref(graph), srcs_vector[i], dests_vector[i], num_edge, _perm);
+      // }
+      gettimeofday(&start, &tzp);
+      for (auto &t : th_cons)
+      {
+        t.join();
+      }
+      // gettimeofday(&start, &tzp);
+      // graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
+      // parallel_for(uint64_t i = 0; i < updates_to_run; i++)
+      // {
+      //   graph.add_edge(edges[i].x, edges[i].y);
+      // }
+      gettimeofday(&end, &tzp);
+      avg_insert += cal_time_elapsed(&start, &end);
+      free(edges);
+      cout << "edgenum of Graph: " << graph.get_num_edges() << endl;
 #if DEL
-      double time_d = (double)avg_delete / n_trials;
-      double delete_throughput = updates_to_run / time_d;
-      printf("batch_size = %zu, average delete: %f, throughput %e\n", updates_to_run, time_d, delete_throughput);
+      for (uint32_t i = 0; i < updates_to_run; i++)
+      {
+        if (!graph.is_edge(new_srcs[i], new_dests[i]))
+        {
+          printf("edge (%u, %u) not found, should be\n", new_srcs[i], new_dests[i]);
+          printf("\tdegree %u = %u\n", new_srcs[i], graph.degree(new_srcs[i]));
+          return;
+        }
+      }
 
+      gettimeofday(&start, &tzp);
+      parallel_for(uint32_t i = 0; i < updates_to_run; i++)
+      {
+        graph.remove_edge(new_srcs[i], new_dests[i]);
+      }
+      gettimeofday(&end, &tzp);
+      avg_delete += cal_time_elapsed(&start, &end);
 #endif
     }
-  }
+    double time_i = (double)avg_insert / n_trials;
+    double insert_throughput = updates_to_run / time_i;
+    printf("batch_size = %zu, average insert: %f, throughput %e\n", updates_to_run, time_i, insert_throughput);
 
-  /*
-   * ===  FUNCTION  =============================================================
-   *         Name:  main
-   *  Description:
-   * ============================================================================
-   */
-  int main(int argc, char **argv)
-  {
-    cout << "this is graph_bm_static " << endl;
-    srand(time(NULL));
-    printf("Num workers: %ld\n", getWorkers());
-    commandLine P(argc, argv, "./graph_bm [-t testname -r rounds -f file");
-    run_algorithm(P);
+#if DEL
+    double time_d = (double)avg_delete / n_trials;
+    double delete_throughput = updates_to_run / time_d;
+    printf("batch_size = %zu, average delete: %f, throughput %e\n", updates_to_run, time_d, delete_throughput);
+
+#endif
   }
-  /*
-    int
-  main ( int argc, char *argv[] )
-  {
-    srand(time(NULL));
-  #if 0
-      uint32_t num_nodesPMA = 100;
-     PMA pma = PMA(num_nodesPMA);
-     for (int i = 0; i < 50; i++) {
-       for (int j = 0; j < 100; j++) {
-          uint32_t y = rand()%num_nodesPMA;
-          //printf("adding edge (%u, %u\n", i, y);
-         pma.add_edge(i,y,1);
-         //pma.print_array();
-         if (rand()%5 == 0) {
-          //printf("removing edge (%u, %u\n", i, y);
-          pma.remove_edge(i,y);
-          //pma.print_array();
-         }
+}
+
+/*
+ * ===  FUNCTION  =============================================================
+ *         Name:  main
+ *  Description:
+ * ============================================================================
+ */
+int main(int argc, char **argv)
+{
+  cout << "this is graph_bm_static " << endl;
+  srand(time(NULL));
+  printf("Num workers: %ld\n", getWorkers());
+  commandLine P(argc, argv, "./graph_bm [-t testname -r rounds -f file");
+  run_algorithm(P);
+  cout<<endl;
+}
+/*
+  int
+main ( int argc, char *argv[] )
+{
+  srand(time(NULL));
+#if 0
+    uint32_t num_nodesPMA = 100;
+   PMA pma = PMA(num_nodesPMA);
+   for (int i = 0; i < 50; i++) {
+     for (int j = 0; j < 100; j++) {
+        uint32_t y = rand()%num_nodesPMA;
+        //printf("adding edge (%u, %u\n", i, y);
+       pma.add_edge(i,y,1);
+       //pma.print_array();
+       if (rand()%5 == 0) {
+        //printf("removing edge (%u, %u\n", i, y);
+        pma.remove_edge(i,y);
+        //pma.print_array();
        }
      }
-     //return 0;
+   }
+   //return 0;
 
 
-     for (int i = 0; i < 10; i++) {
-       std::cout << "Neighbors for node: " << i << " ";
-       for (auto it = pma.begin(i); it != pma.end(i); ++it) {
-         std::cout << (*it).dest << " ";
-       }
-       std::cout << "\n";
+   for (int i = 0; i < 10; i++) {
+     std::cout << "Neighbors for node: " << i << " ";
+     for (auto it = pma.begin(i); it != pma.end(i); ++it) {
+       std::cout << (*it).dest << " ";
      }
+     std::cout << "\n";
+   }
 
-     //pma.print_array(0);
+   //pma.print_array(0);
 
-  #else
+#else
 
-    if (argc < 3) {
-      fprintf(stderr, "Please specify the name of the input file and node id\n");
-      exit(1);
-    }
+  if (argc < 3) {
+    fprintf(stderr, "Please specify the name of the input file and node id\n");
+    exit(1);
+  }
 
-    std::string src, dest;
-    // read edges as source and destination
-    //int cnt = 0;
-    struct timeval start, end;
-    struct timezone tzp;
+  std::string src, dest;
+  // read edges as source and destination
+  //int cnt = 0;
+  struct timeval start, end;
+  struct timezone tzp;
 
-    uint32_t num_nodes;
-      uint64_t num_edges;
-    pair_uint *edges = get_edges_from_file(argv[1], 1,true, &num_edges, &num_nodes);
+  uint32_t num_nodes;
+    uint64_t num_edges;
+  pair_uint *edges = get_edges_from_file(argv[1], 1,true, &num_edges, &num_nodes);
 
-    Graph graph(num_nodes);
-    //std::random_shuffle(edgelist.begin(), edgelist.end());
+  Graph graph(num_nodes);
+  //std::random_shuffle(edgelist.begin(), edgelist.end());
 
-    PRINT("Inserting edges");
-    gettimeofday(&start, &tzp);
+  PRINT("Inserting edges");
+  gettimeofday(&start, &tzp);
 
-    for (uint64_t i = 0; i < num_edges; i++) {
-      graph.add_edge(edges[i].x, edges[i].y);
-    }
-    gettimeofday(&end, &tzp);
-    free(edges);
+  for (uint64_t i = 0; i < num_edges; i++) {
+    graph.add_edge(edges[i].x, edges[i].y);
+  }
+  gettimeofday(&end, &tzp);
+  free(edges);
 
-    PRINT("Construction finished. Nodes: " << graph.get_num_vertices() <<
-          " Edges: " << graph.get_num_edges());
-    print_time_elapsed("Inserting edges: ", &start, &end);
-    PRINT("Throughput: " <<
-          graph.get_num_edges()/(float)cal_time_elapsed(&start, &end));
+  PRINT("Construction finished. Nodes: " << graph.get_num_vertices() <<
+        " Edges: " << graph.get_num_edges());
+  print_time_elapsed("Inserting edges: ", &start, &end);
+  PRINT("Throughput: " <<
+        graph.get_num_edges()/(float)cal_time_elapsed(&start, &end));
 
-    PRINT("Starting BFS");
-    gettimeofday(&start, &tzp);
-    auto bfs_result = BFS_with_edge_map(graph, atoi(argv[2]));
-    //pvector<int32_t> bfs_result = parallel_bfs(graph, atoi(argv[2]), num_edges);
-    //std::vector<int32_t> bfs_result = bfs(graph, atoi(argv[2]));
-    gettimeofday(&end, &tzp);
-    PRINT("BFS finished. parent of 0: " << bfs_result[0]);
-    print_time_elapsed("BFS traversal: ", &start, &end);
-  #if 0
-    PRINT("Starting BFS");
-    auto it = graph.find();
-    uint64_t total = 0;
-    gettimeofday(&start, &tzp);
-    while (!it.done()) {
-      total++;
-      ++it;
-    }
-    gettimeofday(&end, &tzp);
-    PRINT("BFS finished. Nodes: " << total);
-    print_time_elapsed("BFS traversal: ", &start, &end);
-  #endif
+  PRINT("Starting BFS");
+  gettimeofday(&start, &tzp);
+  auto bfs_result = BFS_with_edge_map(graph, atoi(argv[2]));
+  //pvector<int32_t> bfs_result = parallel_bfs(graph, atoi(argv[2]), num_edges);
+  //std::vector<int32_t> bfs_result = bfs(graph, atoi(argv[2]));
+  gettimeofday(&end, &tzp);
+  PRINT("BFS finished. parent of 0: " << bfs_result[0]);
+  print_time_elapsed("BFS traversal: ", &start, &end);
+#if 0
+  PRINT("Starting BFS");
+  auto it = graph.find();
+  uint64_t total = 0;
+  gettimeofday(&start, &tzp);
+  while (!it.done()) {
+    total++;
+    ++it;
+  }
+  gettimeofday(&end, &tzp);
+  PRINT("BFS finished. Nodes: " << total);
+  print_time_elapsed("BFS traversal: ", &start, &end);
+#endif
 
-  #endif
-    return EXIT_SUCCESS;
-  }*/
-  /* ----------  end of function main  ---------- */
+#endif
+  return EXIT_SUCCESS;
+}*/
+/* ----------  end of function main  ---------- */

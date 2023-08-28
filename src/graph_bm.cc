@@ -235,7 +235,8 @@ double test_sssp_bf(G& GA, commandLine& P) {
 void run_algorithm(commandLine& P) {
   auto test_id = P.getOptionValue("-t", "BFS");
   size_t rounds = P.getOptionLongValue("-r", 1000000);
-  
+  int txt_or_adj = P.getOptionLongValue("-a", 1);
+
 	std::string src, dest;
 	// read edges as source and destination
 	//int cnt = 0;
@@ -246,8 +247,19 @@ void run_algorithm(commandLine& P) {
 	uint32_t num_nodes;
   uint64_t num_edges;
   auto filename = P.getOptionValue("-f", "none");
-	pair_uint *edges = get_edges_from_file(filename.c_str(), 1,true, &num_edges, &num_nodes);
-	//pair_uint *edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
+  pair_uint *edges;
+  switch (txt_or_adj)
+  {
+  case 1:
+      edges = get_edges_from_file(filename.c_str(), 1, false, &num_edges, &num_nodes);
+    break;
+  case 2:
+      edges = get_edges_from_file(filename.c_str(), 1, true, &num_edges, &num_nodes);
+    break;
+  default:
+      edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
+    break;
+  }	//pair_uint *edges = get_edges_from_file_adj_sym(filename.c_str(), &num_edges, &num_nodes);
 
 	Graph graph(num_nodes);
 	//std::random_shuffle(edgelist.begin(), edgelist.end());
@@ -266,11 +278,10 @@ void run_algorithm(commandLine& P) {
 
 	PRINT("Inserting edges");	
 	gettimeofday(&start, &tzp);
-	// graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
-	parallel_for (uint64_t i = 0; i < num_edges; i++) {
-	//for (uint64_t i = 0; i < num_edges; i++) {
-		graph.add_edge(edges[i].x, edges[i].y);
-	}
+	graph.add_edge_batch(new_srcs.data(), new_dests.data(), num_edges, perm);
+	// parallel_for (uint64_t i = 0; i < num_edges; i++) {
+	// 	graph.add_edge(edges[i].x, edges[i].y);
+	// }
 
 	gettimeofday(&end, &tzp);
   for(uint32_t i = 0; i < num_edges; i++) {
@@ -334,7 +345,7 @@ void run_algorithm(commandLine& P) {
     // else {
     //   n_trials = 5;
     // }
-    n_trials =20;
+    n_trials =10;
     size_t updates_to_run = update_sizes[us];
 		auto perm = get_random_permutation(updates_to_run);
     for (size_t ts=0; ts<n_trials; ts++) {
@@ -372,7 +383,7 @@ void run_algorithm(commandLine& P) {
       graph.add_edge_batch(new_srcs.data(), new_dests.data(), updates_to_run, perm);
       gettimeofday(&end, &tzp);
       avg_insert += cal_time_elapsed(&start, &end);
-      
+      cout << "edgenum of Graph: " << graph.get_num_edges() << endl;
 #if DEL
       for(uint32_t i = 0; i < updates_to_run; i++) {
         if (!graph.is_edge(new_srcs[i], new_dests[i])) {
@@ -416,6 +427,7 @@ int main(int argc, char** argv) {
   printf("Num workers: %ld\n", getWorkers());
   commandLine P(argc, argv, "./graph_bm [-t testname -r rounds -f file");
   run_algorithm(P);
+  cout<<endl;
 }
 /*
 	int
